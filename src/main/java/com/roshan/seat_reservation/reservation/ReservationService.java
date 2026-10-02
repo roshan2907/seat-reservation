@@ -29,9 +29,9 @@ public class ReservationService {
     }
 
     /**
-     * NAIVE VERSION: load -> check -> save.
-     * Intentionally racy: two concurrent transactions can both see a seat as
-     * 'available' and both confirm it. Exposed by the next commit's test, then fixed.
+     * Reserves seats all-or-nothing.
+     * The seat claim is a single conditional UPDATE guarded on status='available';
+     * if fewer rows than requested are updated, the transaction rolls back.
      */
     @Transactional
     public ReservationResponse reserve(UUID showId, String userId, String idempotencyKey, ReserveRequest req) {
@@ -40,25 +40,20 @@ public class ReservationService {
 
         List<String> labels = req.seats().stream().map(String::trim).distinct().sorted().toList();
 
-        // READ
-        List<Seat> seats = seatRepository.findByShowIdAndLabelIn(showId, labels);
-        if (seats.size() != labels.size()) {
+        if (seatRepository.countByShowIdAndLabelIn(showId, labels) != labels.size()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "unknown seat");
         }
 
-        // CHECK  (race window: another transaction can confirm the seat right now)
-        for (Seat seat : seats) {
-            if (!seat.isAvailable()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "seat_taken");
-            }
-        }
-
-        // WRITE
         Reservation reservation = new Reservation(UUID.randomUUID(), showId, userId, idempotencyKey,
                 requestHash(showId, labels), labels.toArray(String[]::new),
                 show.getPricePaise() * labels.size());
-        reservationRepository.saveAndFlush(reservation); // seats.reservation_id has FK to reservations
-        seats.forEach(seat -> seat.confirm(reservation.getId()));
+        reservationRepository.saveAndFlush(reservation); // must exist before seats reference it (FK)
+
+        int claimed = seatRepository.claimIfAvailable(showId, labels, reservation.getId());
+        if (claimed != labels.size()) {
+            // rollback undoes the reservation row and any seats claimed by this statement
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "seat_taken");
+        }
 
         return ReservationResponse.from(reservation);
     }

@@ -24,11 +24,7 @@ public class Seat {
     protected Seat() { }
 
     public boolean isAvailable() { return "available".equals(status); }
-
-    public void confirm(UUID reservationId) {
-        this.status = "confirmed";
-        this.reservationId = reservationId;
-    }
+    
 
     public UUID getShowId() { return showId; }
     public String getLabel() { return label; }
