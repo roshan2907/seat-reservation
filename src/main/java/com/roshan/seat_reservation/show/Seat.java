@@ -24,7 +24,7 @@ public class Seat {
     protected Seat() { }
 
     public boolean isAvailable() { return "available".equals(status); }
-    
+
 
     public UUID getShowId() { return showId; }
     public String getLabel() { return label; }

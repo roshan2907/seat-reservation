@@ -40,7 +40,10 @@ public class ReservationService {
 
         List<String> labels = req.seats().stream().map(String::trim).distinct().sorted().toList();
 
-        if (seatRepository.countByShowIdAndLabelIn(showId, labels) != labels.size()) {
+        // Lock requested seats in a deterministic (sorted) order -> no deadlock cycles.
+        // Also tells us whether every requested seat exists.
+        List<String> locked = seatRepository.lockInOrder(showId, labels);
+        if (locked.size() != labels.size()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "unknown seat");
         }
 
