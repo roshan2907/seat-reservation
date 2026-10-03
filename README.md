@@ -34,3 +34,23 @@ Options: `--seats`, `--hot-users`, `--spread-users`, `--replays`, `--concurrency
 Latest live run: [`burst/last-run.txt`](burst/last-run.txt).
 
 To run it from the cloud: GitHub → Actions → **burst** → Run workflow (uses `.github/workflows/burst.yml`).
+
+## Burst test (one command)
+```bash
+./burst/burst.sh https://seat-reservation-production-fe29.up.railway.app
+# Windows: pip install -r burst/requirements.txt && python burst/burst.py <BASE_URL>
+```
+Creates a fresh show, then fires at the same time: a hot-seat storm (500 users on one seat),
+spread load, concurrent same-key retries, per-user-limit abuse and a spoofed identity,
+followed by same-key-different-body reuse. Prints the outcome distribution and p50/p95/p99,
+then verifies: one winner on the hot seat, zero 5xx, no double-sell,
+`available + held + confirmed == total`, per-user limit, idempotency, token-derived identity,
+and that Prometheus counters match the API. Exits 1 if any check fails.
+
+Options: `--seats`, `--hot-users`, `--spread-users`, `--replays`, `--concurrency`.
+
+**Latest live run** ([burst/last-run.txt](burst/last-run.txt)), 2211 requests at concurrency 200:
+0 5xx · hot seat 1 winner / 499 declined · 0 double-sold · 300/300 reconciled ·
+per-user limit exactly 4 · metrics match API.
+
+To run it from the cloud: GitHub → Actions → **burst** → Run workflow.
