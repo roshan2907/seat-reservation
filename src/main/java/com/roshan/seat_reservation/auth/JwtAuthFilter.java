@@ -46,6 +46,6 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private void unauthorized(HttpServletResponse response, String code) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType("application/json");
-        response.getWriter().write("{\"code\":\"" + code + "\"}");
+        response.getWriter().write("{\"code\":\"" + code + "\",\"message\":\"Valid Bearer token required\"}");
     }
 }

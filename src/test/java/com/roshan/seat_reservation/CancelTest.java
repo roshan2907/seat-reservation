@@ -39,7 +39,7 @@ class CancelTest {
         // Bob cannot cancel Alice's reservation
         assertThatThrownBy(() -> reservationService.cancel(aliceRes, bob))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("reservation not found");
+                .hasMessageContaining("reservation_not_found");
         assertThat(seatStatus(show.id(), "A1")).isEqualTo("confirmed");
 
         // Alice cancels -> seat freed, quota returned

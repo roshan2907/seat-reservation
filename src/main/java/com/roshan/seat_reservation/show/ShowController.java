@@ -25,7 +25,7 @@ public class ShowController {
     public ResponseEntity<ShowResponse> create(@RequestAttribute(AuthUser.REQUEST_ATTR) AuthUser user,
                                                @Valid @RequestBody CreateShowRequest req) {
         if (!user.isAdmin()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin only");
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "admin_only");
         }
         ShowResponse created = showService.create(req);
         return ResponseEntity.created(URI.create("/shows/" + created.id())).body(created);

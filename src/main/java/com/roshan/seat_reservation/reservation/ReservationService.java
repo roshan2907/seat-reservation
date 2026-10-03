@@ -42,7 +42,7 @@ public class ReservationService {
     @Transactional
     public ReserveResult reserve(UUID showId, String userId, String idempotencyKey, ReserveRequest req) {
         Show show = showRepository.findById(showId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "show not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "show_not_found"));
 
         List<String> labels = req.seats().stream().map(String::trim).distinct().sorted().toList();
         String hash = requestHash(showId, labels);
@@ -90,7 +90,7 @@ public class ReservationService {
         // 3. Lock seats in sorted order, then claim atomically
         List<String> locked = seatRepository.lockInOrder(showId, labels);
         if (locked.size() != labels.size()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "unknown seat");
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "unknown_seat");
         }
         int claimed = seatRepository.claimIfAvailable(showId, labels, reservationId);
         if (claimed != labels.size()) {
@@ -127,7 +127,7 @@ public class ReservationService {
 
         Reservation reservation = reservationRepository.findById(reservationId)
                 .filter(r -> r.getUserId().equals(userId))
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "reservation not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "reservation_not_found"));
 
         if (updated == 0) {
             return ReservationResponse.from(reservation);   // already cancelled -> no-op

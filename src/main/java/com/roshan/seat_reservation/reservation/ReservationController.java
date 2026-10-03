@@ -26,7 +26,7 @@ public class ReservationController {
                                                        @Valid @RequestBody ReserveRequest req) {
         String key = headerKey != null ? headerKey : req.idempotencyKey();
         if (key == null || key.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "idempotency_key required");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "idempotency_key_required");
         }
         // user id comes ONLY from the token, never from the body
         ReserveResult result = reservationService.reserve(showId, user.userId(), key, req);

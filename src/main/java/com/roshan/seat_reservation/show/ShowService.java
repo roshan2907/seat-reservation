@@ -28,7 +28,7 @@ public class ShowService {
     public ShowResponse create(CreateShowRequest req) {
         List<String> labels = req.seats().stream().map(String::trim).toList();
         if (new HashSet<>(labels).size() != labels.size()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "duplicate seat labels");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "duplicate_seat_labels");
         }
         int limit = req.perUserLimit() == null ? DEFAULT_PER_USER_LIMIT : req.perUserLimit();
 
@@ -51,7 +51,7 @@ public class ShowService {
     @Transactional(readOnly = true)
     public ShowResponse get(UUID showId) {
         Show show = showRepository.findById(showId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "show not found"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "show_not_found"));
 
         // ONE query => one consistent snapshot, so the counts always add up to the total
         List<SeatView> seats = jdbc.query(
