@@ -20,18 +20,19 @@ public class ReservationService {
     private final ShowRepository showRepository;
     private final SeatRepository seatRepository;
     private final ReservationRepository reservationRepository;
+    private final UserQuotaRepository userQuotaRepository;
 
     public ReservationService(ShowRepository showRepository, SeatRepository seatRepository,
-                              ReservationRepository reservationRepository) {
+                              ReservationRepository reservationRepository , UserQuotaRepository userQuotaRepository) {
         this.showRepository = showRepository;
         this.seatRepository = seatRepository;
         this.reservationRepository = reservationRepository;
+        this.userQuotaRepository = userQuotaRepository;
     }
 
     /**
      * Reserves seats all-or-nothing.
-     * The seat claim is a single conditional UPDATE guarded on status='available';
-     * if fewer rows than requested are updated, the transaction rolls back.
+     * Lock order (same for every write path): reservation row -> quota row -> seats (sorted).
      */
     @Transactional
     public ReservationResponse reserve(UUID showId, String userId, String idempotencyKey, ReserveRequest req) {
@@ -39,22 +40,28 @@ public class ReservationService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "show not found"));
 
         List<String> labels = req.seats().stream().map(String::trim).distinct().sorted().toList();
+        if (labels.size() > show.getPerUserLimit()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "per_user_limit");
+        }
 
-        // Lock requested seats in a deterministic (sorted) order -> no deadlock cycles.
-        // Also tells us whether every requested seat exists.
+        // 1. Reservation row (must exist before seats can reference it)
+        Reservation reservation = new Reservation(UUID.randomUUID(), showId, userId, idempotencyKey,
+                requestHash(showId, labels), labels.toArray(String[]::new),
+                show.getPricePaise() * labels.size());
+        reservationRepository.saveAndFlush(reservation);
+
+        // 2. Per-user limit: atomic conditional increment on one row
+        if (!userQuotaRepository.tryAcquire(showId, userId, labels.size(), show.getPerUserLimit())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "per_user_limit");
+        }
+
+        // 3. Lock seats in sorted order, then claim atomically
         List<String> locked = seatRepository.lockInOrder(showId, labels);
         if (locked.size() != labels.size()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "unknown seat");
         }
-
-        Reservation reservation = new Reservation(UUID.randomUUID(), showId, userId, idempotencyKey,
-                requestHash(showId, labels), labels.toArray(String[]::new),
-                show.getPricePaise() * labels.size());
-        reservationRepository.saveAndFlush(reservation); // must exist before seats reference it (FK)
-
         int claimed = seatRepository.claimIfAvailable(showId, labels, reservation.getId());
         if (claimed != labels.size()) {
-            // rollback undoes the reservation row and any seats claimed by this statement
             throw new ResponseStatusException(HttpStatus.CONFLICT, "seat_taken");
         }
 
