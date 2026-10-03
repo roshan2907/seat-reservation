@@ -37,10 +37,17 @@ def auth(token):
     return {"Authorization": f"Bearer {token}"}
 
 
-async def get_token(client, user_id, role="user"):
-    r = await client.post("/auth/token", json={"user_id": user_id, "role": role})
-    r.raise_for_status()
-    return r.json()["token"]
+async def get_token(client, user_id, role="user", attempts=5):
+    """Setup helper: retried, because a dropped keep-alive connection is not what we are testing."""
+    for attempt in range(attempts):
+        try:
+            r = await client.post("/auth/token", json={"user_id": user_id, "role": role})
+            r.raise_for_status()
+            return r.json()["token"]
+        except (httpx.HTTPError, KeyError):
+            if attempt == attempts - 1:
+                raise
+            await asyncio.sleep(0.5 * (attempt + 1))
 
 
 async def gather_limited(coros, limit):
@@ -89,7 +96,11 @@ async def main():
 
         admin = await get_token(c, f"admin-{run}", "admin")
         labels = [f"S{i}" for i in range(1, args.seats + 1)]
-        hot_seat, others = labels[0], labels[1:]
+        hot_seat = labels[0]
+        # Dedicated seats so the limit and spoof checks are never masked by other buyers.
+        limit_seats = labels[-args.limit_requests:]
+        spoof_seat = labels[-args.limit_requests - 1]
+        others = labels[1:-args.limit_requests - 1]
         r = await c.post("/shows", headers=auth(admin),
                          json={"name": f"burst-{run}", "seats": labels, "price_paise": 25000})
         r.raise_for_status()
@@ -101,7 +112,8 @@ async def main():
         greedy, spoofer = f"greedy-{run}", f"spoof-{run}"
         all_users = user_ids + [greedy, spoofer]
         t0 = time.perf_counter()
-        tokens = dict(zip(all_users, await gather_limited([get_token(c, u) for u in all_users], args.concurrency)))
+        tokens = dict(zip(all_users, await gather_limited([get_token(c, u) for u in all_users],
+                                                          min(args.concurrency, 50))))
         print(f"minted {len(tokens)} tokens in {time.perf_counter() - t0:.1f}s")
 
         metrics_before = await metrics_snapshot(c)
@@ -120,10 +132,10 @@ async def main():
         for u, body in random.sample(spread, min(args.replays, len(spread))):
             plan.append(("replay", u, dict(body)))  # identical body, same key, fired concurrently
 
-        for i, seat in enumerate(random.sample(others, args.limit_requests)):
+        for i, seat in enumerate(limit_seats):
             plan.append(("limit", greedy, {"seats": [seat], "idempotency_key": f"g-{i}"}))
 
-        plan.append(("spoof", spoofer, {"seats": [random.choice(others)], "idempotency_key": "spoof-1",
+        plan.append(("spoof", spoofer, {"seats": [spoof_seat], "idempotency_key": "spoof-1",
                                         "user_id": "someone-else"}))
         random.shuffle(plan)
 
@@ -211,8 +223,10 @@ async def main():
 
     greedy_res = {r["data"]["reservation_id"] for r in results if r["kind"] == "limit" and r["status"] == 201}
     greedy_limit = sum(1 for r in results if r["kind"] == "limit" and r["data"].get("code") == "per_user_limit")
-    check("per-user limit (<= 4 under parallel requests)", len(greedy_res) <= 4,
-          f"(won={len(greedy_res)}, per_user_limit declines={greedy_limit})")
+    expected_wins = min(4, args.limit_requests)
+    check("per-user limit (exactly 4 of N parallel requests on free seats)",
+          len(greedy_res) == expected_wins and greedy_limit == args.limit_requests - expected_wins,
+          f"(won={len(greedy_res)}, per_user_limit declines={greedy_limit} of {args.limit_requests})")
 
     by_key = defaultdict(set)
     for r in results:
