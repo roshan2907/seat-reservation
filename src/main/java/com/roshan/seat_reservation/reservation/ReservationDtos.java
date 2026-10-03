@@ -23,4 +23,7 @@ public final class ReservationDtos {
                     List.of(r.getSeats()), r.getAmountPaise(), r.getStatus());
         }
     }
+
+    /** Service result: the reservation plus whether it was an idempotent replay. */
+    public record ReserveResult(ReservationResponse reservation, boolean replayed) { }
 }

@@ -4,6 +4,7 @@ import com.roshan.seat_reservation.auth.AuthUser;
 import com.roshan.seat_reservation.reservation.ReservationDtos.*;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -19,16 +20,18 @@ public class ReservationController {
     }
 
     @PostMapping("/shows/{showId}/reserve")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ReservationResponse reserve(@PathVariable UUID showId,
-                                       @RequestAttribute(AuthUser.REQUEST_ATTR) AuthUser user,
-                                       @RequestHeader(value = "Idempotency-Key", required = false) String headerKey,
-                                       @Valid @RequestBody ReserveRequest req) {
+    public ResponseEntity<ReservationResponse> reserve(@PathVariable UUID showId,
+                                                       @RequestAttribute(AuthUser.REQUEST_ATTR) AuthUser user,
+                                                       @RequestHeader(value = "Idempotency-Key", required = false) String headerKey,
+                                                       @Valid @RequestBody ReserveRequest req) {
         String key = headerKey != null ? headerKey : req.idempotencyKey();
         if (key == null || key.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "idempotency_key required");
         }
         // user id comes ONLY from the token, never from the body
-        return reservationService.reserve(showId, user.userId(), key, req);
+        ReserveResult result = reservationService.reserve(showId, user.userId(), key, req);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .header("Idempotent-Replayed", String.valueOf(result.replayed()))
+                .body(result.reservation());
     }
 }
