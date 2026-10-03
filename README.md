@@ -32,3 +32,5 @@ and that Prometheus counters match. Exits 1 if any check fails.
 
 Options: `--seats`, `--hot-users`, `--spread-users`, `--replays`, `--concurrency`.
 Latest live run: [`burst/last-run.txt`](burst/last-run.txt).
+
+To run it from the cloud: GitHub → Actions → **burst** → Run workflow (uses `.github/workflows/burst.yml`).

@@ -1,0 +1,37 @@
+name: burst
+
+# Run the on-sale stampede against the live deployment from a cloud runner
+# (no home-network / Wi-Fi limits on opening hundreds of TLS connections).
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Service base URL"
+        required: true
+        default: "https://seat-reservation-production-fe29.up.railway.app"
+      args:
+        description: "Extra burst.py args, e.g. --concurrency 200"
+        required: false
+        default: ""
+
+jobs:
+  burst:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run burst
+        run: |
+          pip install -q -r burst/requirements.txt
+          python burst/burst.py "${{ inputs.base_url }}" ${{ inputs.args }} | tee burst-output.txt
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat burst-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: burst-output
+          path: burst-output.txt
