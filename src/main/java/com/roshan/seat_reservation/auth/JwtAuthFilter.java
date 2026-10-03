@@ -22,8 +22,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        boolean publicShowRead = "GET".equals(request.getMethod()) && path.startsWith("/shows/");
-        return path.startsWith("/auth/token") || path.startsWith("/actuator") || publicShowRead;
+        boolean isGet = "GET".equals(request.getMethod());
+        boolean publicRead = isGet && (path.equals("/") || path.startsWith("/shows/"));
+        return path.startsWith("/auth/token") || path.startsWith("/actuator") || publicRead;
     }
 
     @Override
@@ -37,6 +38,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             AuthUser user = jwtService.parse(header.substring(7));
             request.setAttribute(AuthUser.REQUEST_ATTR, user);
+            org.slf4j.MDC.put("user_id", user.userId());
             chain.doFilter(request, response);
         } catch (JwtException | IllegalArgumentException e) {
             unauthorized(response, "invalid_token");

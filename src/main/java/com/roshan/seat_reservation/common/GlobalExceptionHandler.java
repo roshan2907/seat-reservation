@@ -1,5 +1,6 @@
 package com.roshan.seat_reservation.common;
 
+import com.roshan.seat_reservation.observability.ReservationMetrics;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PessimisticLockException;
 import org.slf4j.Logger;
@@ -32,7 +33,12 @@ import static java.util.Map.entry;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private final ReservationMetrics metrics;
 
+
+    public GlobalExceptionHandler(ReservationMetrics metrics) {
+        this.metrics = metrics;
+    }
     public record ApiError(String code, String message) { }
 
     private static final Map<String, String> MESSAGES = Map.ofEntries(
@@ -50,6 +56,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<ApiError> domain(ResponseStatusException ex) {
         String code = ex.getReason() != null ? ex.getReason() : "error";
+        if (ReservationMetrics.DECLINE_REASONS.contains(code)) metrics.declined(code);
         return ResponseEntity.status(ex.getStatusCode())
                 .body(new ApiError(code, MESSAGES.getOrDefault(code, code)));
     }
@@ -77,6 +84,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({PessimisticLockingFailureException.class,
             PessimisticLockException.class, LockTimeoutException.class})
     ResponseEntity<ApiError> contention(Exception ex) {
+        metrics.declined("seat_contended");
         log.warn("lock contention: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(new ApiError("seat_contended", "Seat is under heavy contention, please retry"));

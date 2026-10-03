@@ -1,6 +1,7 @@
 package com.roshan.seat_reservation.reservation;
 
 import com.roshan.seat_reservation.auth.AuthUser;
+import com.roshan.seat_reservation.observability.ReservationMetrics;
 import com.roshan.seat_reservation.reservation.ReservationDtos.*;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -14,9 +15,11 @@ import java.util.UUID;
 public class ReservationController {
 
     private final ReservationService reservationService;
+    private final ReservationMetrics metrics;
 
-    public ReservationController(ReservationService reservationService) {
+    public ReservationController(ReservationService reservationService, ReservationMetrics metrics) {
         this.reservationService = reservationService;
+        this.metrics = metrics;
     }
 
     @PostMapping("/shows/{showId}/reserve")
@@ -30,6 +33,11 @@ public class ReservationController {
         }
         // user id comes ONLY from the token, never from the body
         ReserveResult result = reservationService.reserve(showId, user.userId(), key, req);
+        if (result.replayed()) {
+            metrics.declined("idempotent_replay");
+        } else {
+            metrics.confirmed();
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header("Idempotent-Replayed", String.valueOf(result.replayed()))
                 .body(result.reservation());
@@ -38,6 +46,8 @@ public class ReservationController {
     @PostMapping("/reservations/{reservationId}/cancel")
     public ReservationResponse cancel(@PathVariable UUID reservationId,
                                       @RequestAttribute(AuthUser.REQUEST_ATTR) AuthUser user) {
-        return reservationService.cancel(reservationId, user.userId());
+        ReservationResponse response = reservationService.cancel(reservationId, user.userId());
+        metrics.cancelled();
+        return response;
     }
 }
