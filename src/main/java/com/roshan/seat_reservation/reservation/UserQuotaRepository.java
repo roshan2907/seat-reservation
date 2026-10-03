@@ -34,4 +34,12 @@ public class UserQuotaRepository {
                 """, n, showId, userId, n, limit);
         return updated == 1;
     }
+
+    public void release(UUID showId, String userId, int n) {
+        jdbc.update("""
+                UPDATE user_show_quota
+                   SET held_count = held_count - ?
+                 WHERE show_id = ? AND user_id = ?
+                """, n, showId, userId);
+    }
 }

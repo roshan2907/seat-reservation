@@ -34,4 +34,10 @@ public class ReservationController {
                 .header("Idempotent-Replayed", String.valueOf(result.replayed()))
                 .body(result.reservation());
     }
+
+    @PostMapping("/reservations/{reservationId}/cancel")
+    public ReservationResponse cancel(@PathVariable UUID reservationId,
+                                      @RequestAttribute(AuthUser.REQUEST_ATTR) AuthUser user) {
+        return reservationService.cancel(reservationId, user.userId());
+    }
 }

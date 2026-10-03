@@ -112,4 +112,34 @@ public class ReservationService {
             throw new IllegalStateException(e);
         }
     }
+
+    /**
+     * Cancels a reservation owned by userId. Idempotent: cancelling twice is a no-op.
+     * Lock order matches reserve: reservation row -> quota row -> seats (sorted).
+     */
+    @Transactional
+    public ReservationResponse cancel(UUID reservationId, String userId) {
+        // 1. Flip status only if it's ours and still confirmed (row lock on the reservation)
+        int updated = jdbc.update("""
+                UPDATE reservations SET status = 'cancelled'
+                 WHERE id = ? AND user_id = ? AND status = 'confirmed'
+                """, reservationId, userId);
+
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .filter(r -> r.getUserId().equals(userId))
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "reservation not found"));
+
+        if (updated == 0) {
+            return ReservationResponse.from(reservation);   // already cancelled -> no-op
+        }
+
+        // 2. Give the quota back
+        userQuotaRepository.release(reservation.getShowId(), userId, reservation.getSeats().length);
+
+        // 3. Free seats still owned by this reservation, locked in sorted order
+        seatRepository.lockByReservationInOrder(reservationId);
+        seatRepository.releaseByReservation(reservationId);
+
+        return ReservationResponse.from(reservation);
+    }
 }

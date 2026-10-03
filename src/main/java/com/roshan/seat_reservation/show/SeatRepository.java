@@ -35,4 +35,23 @@ public interface SeatRepository extends JpaRepository<Seat, SeatId> {
     int claimIfAvailable(@Param("showId") UUID showId,
                          @Param("labels") Collection<String> labels,
                          @Param("reservationId") UUID reservationId);
+
+    /** Locks the seats owned by a reservation, in label order (same order as reserve). */
+    @Query(value = """
+            SELECT label FROM seats
+             WHERE reservation_id = :reservationId
+             ORDER BY label
+               FOR UPDATE
+            """, nativeQuery = true)
+    List<String> lockByReservationInOrder(@Param("reservationId") UUID reservationId);
+
+    /** Frees only seats still owned by this reservation - can never touch someone else's seat. */
+    @Modifying
+    @Query(value = """
+            UPDATE seats
+               SET status = 'available', reservation_id = NULL
+             WHERE reservation_id = :reservationId
+               AND status = 'confirmed'
+            """, nativeQuery = true)
+    int releaseByReservation(@Param("reservationId") UUID reservationId);
 }
