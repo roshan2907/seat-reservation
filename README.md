@@ -13,3 +13,8 @@ docker compose up --build
 
 ## Status
 Work in progress.
+
+## Live
+- Base URL: https://seat-reservation-production-fe29.up.railway.app
+- Health: https://seat-reservation-production-fe29.up.railway.app/actuator/health
+- Hosted on Railway: Dockerfile build + managed Postgres; DB credentials and JWT secret injected as environment variables.
