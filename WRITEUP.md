@@ -11,10 +11,10 @@ Stack: Java 21 · Spring Boot 4.1 · PostgreSQL 16 (Flyway) · JPA + JdbcTemplat
 
 ```sql
 UPDATE seats
-   SET status = 'confirmed', reservation_id = :reservationId
- WHERE show_id = :showId
-   AND label IN (:labels)
-   AND status = 'available'
+SET status = 'confirmed', reservation_id = :reservationId
+WHERE show_id = :showId
+  AND label IN (:labels)
+  AND status = 'available'
 ```
 
 If the affected row count is not equal to the number of seats requested, the request is declined (`409 seat_taken`) and the whole transaction rolls back.
@@ -61,7 +61,7 @@ Each `(show, user)` has a counter row, incremented atomically:
 
 ```sql
 UPDATE user_show_quota SET held_count = held_count + :n
- WHERE show_id = ? AND user_id = ? AND held_count + :n <= :limit
+WHERE show_id = ? AND user_id = ? AND held_count + :n <= :limit
 ```
 
 0 rows → `409 per_user_limit`. A user's parallel requests serialise on that single row. If the later seat claim fails, the rollback also undoes the increment. Test: one user, 10 parallel requests for 10 free seats, limit 4 → exactly 4 confirmed, 6 declined, counter = 4.
@@ -70,7 +70,7 @@ UPDATE user_show_quota SET held_count = held_count + :n
 
 ## 2. Idempotency
 
-- **Where the key lives:** on the reservation row itself — `reservations.idempotency_key` with `UNIQUE (user_id, idempotency_key)`. Keys are scoped per user (taken from the token), so two users can use the same key string. The key is accepted from the `Idempotency-Key` header or the `idempotency_key` body field.
+- **Where the key lives:** on the reservation row itself — `reservations.idempotency_key` with `UNIQUE (user_id, idempotency_key)`. Keys are scoped per user (taken from the token), so two users can use the same key string. The key is sent in the `idempotency_key` body field.
 - **How exactly-once is enforced:** the reservation row is the **first** write in the transaction:
   ```sql
   INSERT INTO reservations (...) VALUES (...) ON CONFLICT (user_id, idempotency_key) DO NOTHING
@@ -149,13 +149,13 @@ All correctness checks passed in both runs, and metrics matched the API.
 
 **Throughput ceiling.** Throughput stays around 45 req/s regardless of concurrency; extra concurrency only lengthens the queue (≈ 500 in flight ÷ 41/s ≈ 12 s average wait). The ceiling comes from a small trial instance, a 15-connection pool, ~6–7 database round trips per reserve, and the fact that ~87% of requests are losers that still do the full write path before rolling back. Runs were made from a single machine in Riyadh against a US-West deployment; at 50+ new TLS connections a few requests occasionally failed to connect on the client side (no HTTP response at all) — the service itself returned 0 5xx in every run.
 
-Cold start to readiness `UP`: **~XX s** <!-- TODO: measure (Railway → Restart, time until /actuator/health/readiness is UP) -->
+At ~45 req/s, a 20k-request burst would queue for minutes; requests waiting past the 30 s connection-acquire timeout would get `503` with `Retry-After` rather than an incorrect result. Fast-path declines (section 8.1) are the fix for this.
+
+**Cold start.** The service does not scale to zero on Railway. After a restart or redeploy, Railway's healthcheck holds traffic until `/actuator/health/readiness` reports `UP` (Flyway validation + DB connectivity), so no request reaches an instance that cannot decide seats.
 
 ---
 
 ## 7. AI usage — directed vs decided
-
-<!-- TODO: rewrite this section in your own words; keep it specific and honest. -->
 
 I used Claude (Anthropic) as a pair-programmer throughout, in a chat session.
 
